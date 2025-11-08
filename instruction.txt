@@ -1,0 +1,14 @@
+Backend:
+
+  cd /Users/dipen/ExtraProjects/consultAI/backend
+  source .venv/bin/activate          # activates your Python venv
+  export FLASK_APP=app.py            # (set once per session)
+  flask run                          # serves the API on http://127.0.0.1:5000
+
+Frontend (in a new terminal):
+
+  cd /Users/dipen/ExtraProjects/consultAI/frontend
+  npm install                        # only the first time or after deps change
+  npm run dev                        # opens Vite dev server on http://localhost:5173
+
+  Keep both terminals open while you’re testing the app.
