@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import API from "../utils/api";
 import {
   ScatterChart,
@@ -24,6 +24,10 @@ export default function BusinessInsightsPage() {
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const reportRef = useRef(null);
+  const consultantSummary = useMemo(
+    () => formatConsultantSummary(result?.gpt_summary ?? ""),
+    [result?.gpt_summary]
+  );
 
   const handleFileChange = (event) => {
     setFile(event.target.files[0] ?? null);
@@ -68,6 +72,20 @@ export default function BusinessInsightsPage() {
       y: item.y ?? item.revenue ?? 0,
       cluster: item.cluster ?? 0,
     })) ?? [];
+  const clusterSeries = useMemo(() => {
+    const palette = ["#6366f1", "#0ea5e9", "#f97316", "#10b981", "#a855f7"];
+    const groups = clusterData.reduce((acc, point) => {
+      const key = point.cluster ?? 0;
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(point);
+      return acc;
+    }, {});
+    return Object.entries(groups).map(([clusterId, points], index) => ({
+      clusterId,
+      points,
+      color: palette[index % palette.length],
+    }));
+  }, [clusterData]);
 
   const trendData = result?.chart_data?.trend_data ?? [];
 
@@ -180,6 +198,23 @@ export default function BusinessInsightsPage() {
             {loading ? "Analyzing..." : "Upload & Analyze"}
           </button>
         </form>
+        <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 px-4 py-3 text-sm text-slate-600">
+          <p className="text-sm font-semibold text-slate-800">
+            Tip: richer uploads unlock better insights
+          </p>
+          <ul className="mt-2 list-disc space-y-1 pl-5">
+            <li>
+              Include core columns like <span className="font-medium">revenue, profit, profit_margin, segment/category, region, date, churn</span>{" "}
+              so the advisor can build clusters and trends.
+            </li>
+            <li>
+              Keep the file clean (one row per record, consistent currency, no merged cells) and save as UTF-8 CSV for the best results.
+            </li>
+            <li>
+              Add recent periods and all key business lines—missing data limits the recommendations surfaced on this page.
+            </li>
+          </ul>
+        </div>
       </section>
 
       {result && (
@@ -214,28 +249,39 @@ export default function BusinessInsightsPage() {
               description="Profit margin versus revenue clusters"
             >
               <ResponsiveContainer width="100%" height={320}>
-                <ScatterChart>
-                  <CartesianGrid strokeDasharray="3 3" />
+                <ScatterChart margin={{ top: 16, right: 24, left: 0, bottom: 16 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                   <XAxis
                     type="number"
                     dataKey="x"
                     name="Profit Margin"
                     tickFormatter={(value) => formatPercentage(value)}
+                    tick={{ fontSize: 12, fill: "#475569" }}
+                    label={{ value: "Profit margin", position: "insideBottom", offset: -8 }}
                   />
                   <YAxis
                     type="number"
                     dataKey="y"
                     name="Revenue"
                     tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`}
+                    tick={{ fontSize: 12, fill: "#475569" }}
+                    label={{ value: "Revenue", angle: -90, position: "insideLeft" }}
                   />
-                  <Tooltip
-                    formatter={(value, name) =>
-                      name === "x" ? formatPercentage(value) : formatCurrency(value)
-                    }
+                  <Tooltip content={(props) => renderClusterTooltip(props, formatCurrency, formatPercentage)} />
+                  <Legend
+                    verticalAlign="top"
+                    align="right"
+                    wrapperStyle={{ fontSize: 12, paddingBottom: 8 }}
                   />
-                  <Scatter name="Clusters" data={clusterData} fill="#2563eb">
-                    <LabelList dataKey="cluster" position="inside" fill="#ffffff" fontSize={12} />
-                  </Scatter>
+                  {clusterSeries.map(({ clusterId, points, color }) => (
+                    <Scatter
+                      key={`cluster-${clusterId}`}
+                      name={`Cluster ${clusterId}`}
+                      data={points}
+                      fill={color}
+                      fillOpacity={0.75}
+                    />
+                  ))}
                 </ScatterChart>
               </ResponsiveContainer>
             </ChartCard>
@@ -444,9 +490,48 @@ export default function BusinessInsightsPage() {
             <h3 className="text-lg font-semibold text-slate-800">
               Consultant Recommendation
             </h3>
-            <p className="mt-2 text-slate-700 leading-relaxed">
-              {result.gpt_summary}
-            </p>
+            <div className="mt-2 text-slate-700 leading-relaxed space-y-2">
+              {consultantSummary.intro.length === 0 &&
+              consultantSummary.bullets.length === 0 ? (
+                <p>{result.gpt_summary}</p>
+              ) : (
+                <>
+                  {consultantSummary.intro.map((line, idx) => (
+                    <p key={`summary-intro-${idx}`}>{line}</p>
+                  ))}
+                  {consultantSummary.bullets.length > 0 && (
+                    <div className="space-y-1 text-sm">
+                      {consultantSummary.bullets.map((line, idx) => (
+                        <div
+                          key={`summary-bullet-${idx}`}
+                          className="flex items-start gap-2"
+                        >
+                          <span className="text-indigo-500 leading-6">•</span>
+                          <span className="flex-1">{line}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+            {(result.gpt_summary_source || result.gpt_summary_warning) && (
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+                {result.gpt_summary_source && (
+                  <span>
+                    Source:{" "}
+                    {result.gpt_summary_source === "huggingface"
+                      ? "Live agent"
+                      : "Heuristic fallback"}
+                  </span>
+                )}
+                {result.gpt_summary_warning && (
+                  <span className="text-amber-600">
+                    {result.gpt_summary_warning}
+                  </span>
+                )}
+              </div>
+            )}
             <button
               type="button"
               onClick={handleDownloadReport}
@@ -458,6 +543,87 @@ export default function BusinessInsightsPage() {
           </div>
         </section>
       )}
+    </div>
+  );
+}
+
+function KpiCard({ title, value }) {
+  return (
+    <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+      <p className="text-sm font-medium text-slate-600">{title}</p>
+      <p className="mt-2 text-2xl font-semibold text-slate-900">{value}</p>
+    </div>
+  );
+}
+
+function ChartCard({ title, description, children, className = "" }) {
+  return (
+    <div className={`rounded-3xl border border-slate-200 bg-white p-4 shadow-sm ${className}`}>
+      <div className="mb-3">
+        <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
+        {description ? <p className="text-sm text-slate-600">{description}</p> : null}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function BreakdownChart({ title, data, barColor, formatCurrency }) {
+  return (
+    <ChartCard title={title}>
+      <ResponsiveContainer width="100%" height={280}>
+        <BarChart data={data} layout="vertical" margin={{ left: 48 }}>
+          <CartesianGrid strokeDasharray="3 3" />
+          <XAxis type="number" tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`} />
+          <YAxis type="category" dataKey="label" />
+          <Tooltip formatter={(value) => formatCurrency(value)} />
+          <Bar dataKey="revenue" fill={barColor} radius={[4, 4, 4, 4]} />
+        </BarChart>
+      </ResponsiveContainer>
+    </ChartCard>
+  );
+}
+
+function formatConsultantSummary(text) {
+  if (!text) {
+    return { intro: [], bullets: [] };
+  }
+  const normalized = text
+    .replace(/\s*\*\s+/g, "\n• ")
+    .replace(/\*\*/g, "")
+    .trim();
+  const lines = normalized
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const intro = [];
+  const bullets = [];
+  lines.forEach((line) => {
+    if (line.startsWith("• ")) {
+      bullets.push(line.slice(2).trim());
+    } else {
+      intro.push(line);
+    }
+  });
+  return { intro, bullets };
+}
+
+function renderClusterTooltip(props, formatCurrency, formatPercentage) {
+  const { active, payload } = props ?? {};
+  if (!active || !payload || payload.length === 0) {
+    return null;
+  }
+  const point = payload[0]?.payload;
+  if (!point) {
+    return null;
+  }
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 shadow">
+      <p className="text-sm font-semibold text-slate-900">
+        Cluster {point.cluster ?? "–"}
+      </p>
+      <p>Profit margin: {formatPercentage(point.x)}</p>
+      <p>Revenue: {formatCurrency(point.y)}</p>
     </div>
   );
 }

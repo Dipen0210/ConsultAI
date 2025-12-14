@@ -1,12 +1,18 @@
-import os
 from typing import Any, Dict, Tuple
 
-import requests
 from dotenv import load_dotenv
 from flask import Blueprint, jsonify, request
 
-MODEL = "google/flan-t5-base"
-API_URL = f"https://api-inference.huggingface.co/models/{MODEL}"
+try:
+    from backend.services.hf_client import run_chat_with_fallback
+except ImportError:  # pragma: no cover - fallback when running as script
+    from services.hf_client import run_chat_with_fallback
+
+SYSTEM_PROMPT = (
+    "You are a senior management consultant. Answer every question in exactly three "
+    "clear bullet points using a professional and factual tone. Highlight assumptions "
+    "only when material to the recommendation."
+)
 
 load_dotenv()
 
@@ -14,20 +20,9 @@ gpt_agent_bp = Blueprint("gpt_agent", __name__)
 
 
 def _build_prompt(question: str, context: Dict[str, Any]) -> str:
-    return (
-        "You are a senior management consultant. "
-        "Answer clearly in 3 bullet points using professional, factual tone. "
-        f"Question: {question}\nContext: {context}"
-    )
-
-
-def _parse_generated_text(payload: Any) -> str:
-    if isinstance(payload, list) and payload:
-        first = payload[0] or {}
-        return (first.get("generated_text") or first.get("summary_text") or "").strip()
-    if isinstance(payload, dict):
-        return (payload.get("generated_text") or payload.get("summary_text") or "").strip()
-    return ""
+    context_text = _format_context(context)
+    cleaned_question = (question or "").strip() or "What should our next strategic move be?"
+    return f"Question: {cleaned_question}\nContext: {context_text}"
 
 
 def _format_context(context: Dict[str, Any]) -> str:
@@ -57,42 +52,15 @@ def _fallback_answer(question: str, context: Dict[str, Any]) -> str:
     return "\n".join(f"• {line}" for line in bullets)
 
 
-def _call_hf_api(prompt: str, api_key: str) -> str:
-    headers = {"Authorization": f"Bearer {api_key}"}
-    payload = {"inputs": prompt, "parameters": {"max_new_tokens": 120}}
-    response = requests.post(API_URL, headers=headers, json=payload, timeout=30)
-
-    if response.status_code == 503:
-        raise RuntimeError("Model is warming up, please retry.")
-
-    try:
-        response_json = response.json()
-    except ValueError as exc:
-        raise RuntimeError("Invalid response from Hugging Face API.") from exc
-
-    if isinstance(response_json, dict) and response_json.get("error"):
-        raise RuntimeError(response_json["error"])
-
-    answer = _parse_generated_text(response_json)
-    if not answer:
-        raise RuntimeError("No generated text received from model.")
-    return answer
-
-
 def _generate_answer(question: str, context: Dict[str, Any]) -> Tuple[str, str, str | None]:
     """Return (answer, source, warning)."""
-    api_key = os.getenv("HF_API_KEY")
     prompt = _build_prompt(question, context)
 
-    if api_key:
-        try:
-            return _call_hf_api(prompt, api_key), "huggingface", None
-        except (requests.RequestException, RuntimeError) as exc:
-            warning = f"Hugging Face response unavailable: {exc}"
-            return _fallback_answer(question, context), "fallback", warning
-
-    warning = "HF API key not configured; using heuristic advisor response."
-    return _fallback_answer(question, context), "fallback", warning
+    return run_chat_with_fallback(
+        SYSTEM_PROMPT,
+        prompt,
+        lambda: _fallback_answer(question, context),
+    )
 
 
 @gpt_agent_bp.route("/api/advisor", methods=["POST"])

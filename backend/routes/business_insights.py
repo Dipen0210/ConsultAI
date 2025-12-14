@@ -13,6 +13,7 @@ try:
         load_dataframe,
         resolve_series,
     )
+    from backend.services.hf_client import generate_business_insights_summary
 except ImportError:  # pragma: no cover - fallback for script usage
     from services.business_insights import (
         build_alerts,
@@ -26,6 +27,7 @@ except ImportError:  # pragma: no cover - fallback for script usage
         load_dataframe,
         resolve_series,
     )
+    from services.hf_client import generate_business_insights_summary
 
 business_insights_bp = Blueprint("business_insights", __name__)
 
@@ -80,7 +82,13 @@ def business_insights():
         )
         if alerts:
             summary_parts.append("Review the flagged discounts and low-margin items for corrective actions.")
-        gpt_summary = " ".join(summary_parts)
+        gpt_summary, gpt_source, gpt_warning = generate_business_insights_summary(
+            kpi_summary,
+            dimension_insights,
+            alerts,
+            trend_data,
+            summary_parts,
+        )
 
         response = {
             "status": "success",
@@ -98,9 +106,12 @@ def business_insights():
                 "alerts": alerts,
                 "forecast_data": forecast_data,
                 "gpt_summary": gpt_summary,
+                "gpt_summary_source": gpt_source,
             },
             "message": "KPI analysis complete.",
         }
+        if gpt_warning:
+            response["data"]["gpt_summary_warning"] = gpt_warning
         return jsonify(response), 200
 
     except ValueError as exc:

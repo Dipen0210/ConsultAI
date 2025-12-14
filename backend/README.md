@@ -23,7 +23,7 @@ flask run
 - Health check: `GET /api/health`
 - Market entry scoring: `POST /api/market-entry`
 - Business insights: `POST /api/business-insights` (multipart form upload)
-- GPT advisor (Hugging Face Flan-T5): `POST /api/advisor`
+- GPT advisor (Hugging Face router, default Llama 3.3 70B Instruct): `POST /api/advisor`
 
 ### Sample request
 
@@ -45,3 +45,18 @@ curl -X POST http://127.0.0.1:5000/api/advisor \
   -H "Content-Type: application/json" \
   -d '{"question":"Which region should I expand next year?","context":{"module":"market_entry"}}'
 ```
+
+### Customising the advisor model
+
+Set `HF_MODEL_ID` in your environment or `.env` file to any Hugging Face router model you have access to (for example, `meta-llama/Llama-3.3-70B-Instruct:cerebras`). Remember to keep `HF_API_KEY` configured with a token that has permission to use the chosen model.
+
+- The backend talks to the OpenAI-compatible endpoint at `https://router.huggingface.co/v1/chat/completions`. If you are using a private deployment, override `HF_API_BASE_URL`.
+- Test your token/model pair quickly with:
+
+  ```bash
+  curl -X POST \
+    -H "Authorization: Bearer $HF_API_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{"model":"'"$HF_MODEL_ID"'","messages":[{"role":"user","content":"Ping"}]}' \
+    "https://router.huggingface.co/v1/chat/completions"
+  ```

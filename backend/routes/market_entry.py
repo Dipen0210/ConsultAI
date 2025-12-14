@@ -205,7 +205,7 @@ def market_entry():
                 f"consider {', '.join(leaders[:-1])} and {leaders[-1]} as leading expansion markets."
             )
 
-        explainable_summary = generate_explainable_summary(
+        explainable_summary, summary_source, summary_warning = generate_explainable_summary(
             weights,
             inputs,
             leaders,
@@ -218,8 +218,11 @@ def market_entry():
             "summary": summary,
             "chart_data": chart_data,
             "explainable_summary": explainable_summary,
+            "explainable_summary_source": summary_source,
             "metric_breakdown": breakdown,
         }
+        if summary_warning:
+            response_data["explainable_summary_warning"] = summary_warning
         return jsonify({"status": "success", "data": response_data})
     except (ValueError, FileNotFoundError) as exc:
         return jsonify({"status": "error", "message": str(exc)}), 400

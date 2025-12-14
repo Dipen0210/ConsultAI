@@ -75,7 +75,7 @@ const regionDescriptions = {
   "Sub-Saharan Africa": "Frontier markets with fast population growth and rising mobile adoption.",
 };
 
-const weightLabels = {
+const weightNarrativeLabels = {
   GDP_Growth: "GDP growth momentum",
   Inflation: "inflation stability",
   Internet_Penetration: "digital readiness",
@@ -85,11 +85,24 @@ const weightLabels = {
   purchasing_power_index_cost_of_living: "consumer purchasing power",
 };
 
+const weightDisplayLabels = {
+  GDP_Growth: "GDP growth",
+  Inflation: "Inflation",
+  Internet_Penetration: "Digital reach",
+  Population_Millions: "Population",
+  corruption_index_corruption: "Governance",
+  cost_index_cost_of_living: "Cost base",
+  purchasing_power_index_cost_of_living: "Purchasing power",
+};
+
+const getWeightDisplayLabel = (metric) =>
+  weightDisplayLabels[metric] || metric.replaceAll("_", " ");
+
 const describeWeights = (weights) => {
   if (!weights) return "";
   const parts = Object.entries(weights)
     .map(([key, value]) => {
-      const label = weightLabels[key] || key;
+      const label = weightNarrativeLabels[key] || key;
       return `${label} (~${(value * 100).toFixed(0)}%)`;
     })
     .join(", ");
@@ -427,17 +440,38 @@ export default function MarketEntry() {
           </div>
           <div>
             <p className="text-sm font-medium text-slate-700">Weights used</p>
-            <div className="mt-2 grid gap-2 text-sm text-slate-600 sm:grid-cols-2 md:grid-cols-4">
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
               {results.weights_used &&
-                Object.entries(results.weights_used).map(([metric, value]) => (
-                  <div
-                    key={metric}
-                    className="rounded-md border border-slate-200 px-3 py-2 text-center"
-                  >
-                    <p className="font-semibold text-slate-900">{metric}</p>
-                    <p>{(value * 100).toFixed(1)}%</p>
-                  </div>
-                ))}
+                Object.entries(results.weights_used)
+                  .sort((a, b) => b[1] - a[1])
+                  .map(([metric, value]) => {
+                    const displayLabel = getWeightDisplayLabel(metric);
+                    const helperText = weightNarrativeLabels[metric];
+                    const percentage = (value * 100).toFixed(1);
+                    const barWidth = Math.min(Math.max(value * 100, 6), 100);
+                    return (
+                      <div
+                        key={metric}
+                        className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm"
+                      >
+                        <div className="flex items-center justify-between text-sm text-slate-900">
+                          <span>{displayLabel}</span>
+                          <span>{percentage}%</span>
+                        </div>
+                        <div className="mt-2 h-2 rounded-full bg-slate-200">
+                          <div
+                            className="h-full rounded-full bg-indigo-500"
+                            style={{ width: `${barWidth}%` }}
+                          />
+                        </div>
+                        {helperText && (
+                          <p className="mt-2 text-xs text-slate-500">
+                            {helperText}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
             </div>
           </div>
           {results.metric_breakdown && (
@@ -445,27 +479,46 @@ export default function MarketEntry() {
               <p className="text-sm font-medium text-slate-700">
                 Top market metric breakdown
               </p>
-              <div className="mt-3 space-y-3">
+              <div className="mt-3 space-y-5">
                 {results.metric_breakdown.map((entry) => (
                   <div
                     key={entry.country}
-                    className="rounded-lg border border-slate-200 px-4 py-3"
+                    className="rounded-2xl border border-slate-200 bg-white/80 px-5 py-4 shadow-sm"
                   >
-                    <p className="font-semibold text-slate-900">
-                      {entry.country} · Score {(entry.score * 100).toFixed(1)}%
-                    </p>
-                    <div className="mt-2 grid gap-3 text-sm text-slate-600 md:grid-cols-2 lg:grid-cols-4">
-                      {Object.entries(entry.metrics).map(([metric, detail]) => (
-                        <div key={metric}>
-                          <p className="text-xs uppercase tracking-wide text-slate-500">
-                            {metric.replaceAll("_", " ")}
-                          </p>
-                          <p>
-                            Raw {formatRawValue(metric, detail.raw)} · Contribution{" "}
-                            {(detail.contribution * 100).toFixed(1)}%
-                          </p>
-                        </div>
-                      ))}
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-slate-900 text-lg">
+                        {entry.country}
+                      </p>
+                      <span className="text-sm text-indigo-600">
+                        Score {(entry.score * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      {Object.entries(entry.metrics).map(([metric, detail]) => {
+                        const label = getWeightDisplayLabel(metric);
+                        const contribution = (detail.contribution * 100).toFixed(1);
+                        const isZero = Number(contribution) === 0;
+                        return (
+                          <div
+                            key={metric}
+                            className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm"
+                          >
+                            <div className="flex items-center justify-between text-slate-900">
+                              <span>{label}</span>
+                              <span
+                                className={`text-xs ${
+                                  isZero ? "text-slate-400" : "text-emerald-600"
+                                }`}
+                              >
+                                {contribution}%
+                              </span>
+                            </div>
+                            <p className="mt-1 text-xs text-slate-500">
+                              Raw {formatRawValue(metric, detail.raw)}
+                            </p>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 ))}
@@ -474,24 +527,44 @@ export default function MarketEntry() {
           )}
           <p className="text-slate-700">{results.summary}</p>
           {(results.explainable_summary || results.weights_used) && (
-            <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-              <p className="font-semibold text-slate-900">
-                How this decision was made
-              </p>
-              <div className="mt-1 space-y-1">
+            <div className="rounded-2xl border border-indigo-100 bg-indigo-50/80 px-5 py-4 text-sm text-slate-700 shadow-sm">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-base font-semibold text-slate-900">
+                  How this decision was made
+                </p>
+                {results.explainable_summary_source && (
+                  <span className="rounded-full border border-indigo-200 bg-white/80 px-3 py-1 text-xs font-medium text-indigo-700">
+                    {results.explainable_summary_source === "huggingface"
+                      ? "Live agent"
+                      : "Heuristic fallback"}
+                  </span>
+                )}
+              </div>
+              <div className="mt-3 space-y-2">
                 {(results.explainable_summary ||
                   describeWeights(results.weights_used))
                   .split(/\n+/)
-                  .map((line, index) =>
-                    line.trim().startsWith("•") ? (
-                      <p key={index} className="pl-3">
-                        {line}
-                      </p>
-                    ) : (
-                      <p key={index}>{line}</p>
-                    )
-                  )}
+                  .filter((line) => line.trim().length > 0)
+                  .map((line, index) => {
+                    const cleaned = line.replace(/^\s*•\s*/, "");
+                    return (
+                      <div
+                        key={`explain-line-${index}`}
+                        className="flex items-start gap-3 leading-relaxed"
+                      >
+                        <span className="text-indigo-400 font-semibold">•</span>
+                        <p className="flex-1 whitespace-pre-line text-slate-800">
+                          {cleaned}
+                        </p>
+                      </div>
+                    );
+                  })}
               </div>
+              {results.explainable_summary_warning && (
+                <p className="mt-3 text-xs text-amber-600">
+                  {results.explainable_summary_warning}
+                </p>
+              )}
             </div>
           )}
         </div>
